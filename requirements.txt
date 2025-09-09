@@ -1,4 +1,6 @@
 streamlit==1.49.1
 pillow
-opencv-python
+numpy
+opencv-python-headless
+ultralytics
 onnxruntime
