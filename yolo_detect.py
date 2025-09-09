@@ -6,8 +6,6 @@ from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 
 def save_with_boxes(result, out_path: Path):
-    """Render detections from an Ultralytics result onto the image (PIL) and save."""
-    # Ultralytics gives BGR numpy array
     arr_bgr = result.orig_img
     arr_rgb = arr_bgr[..., ::-1]  # BGR -> RGB
     img = Image.fromarray(arr_rgb)
@@ -29,15 +27,20 @@ def save_with_boxes(result, out_path: Path):
         for (x1, y1, x2, y2), c, k in zip(xyxy, conf, cls):
             label_name = names[int(k)] if names and int(k) in names else str(k)
             label = f"{label_name} {c:.2f}"
-            # box
-            draw.rectangle([x1, y1, x2, y2], outline=(0, 255, 0), width=3)
-            # text bg
+
+            # warna biru seperti contoh
+            box_color = (0, 180, 255)  
+
+            # Gambar kotak
+            draw.rectangle([x1, y1, x2, y2], outline=box_color, width=3)
+
+            # Ukuran teks
             tw = draw.textlength(label, font=font)
             th = (font.size + 6) if font else 16
-            x1t, y1t = x1, max(0, y1 - th)
-            draw.rectangle([x1t, y1t, x1t + tw + 8, y1t + th], fill=(0, 255, 0))
-            # text
-            draw.text((x1t + 4, y1t + 3), label, fill=(0, 0, 0), font=font)
+
+            # Latar label di atas kotak
+            draw.rectangle([x1, y1 - th, x1 + tw + 6, y1], fill=box_color)
+            draw.text((x1 + 3, y1 - th + 2), label, fill=(255, 255, 255), font=font)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     img.save(out_path)
