@@ -1,77 +1,82 @@
 import argparse
-import cv2
-from ultralytics import YOLO
 from pathlib import Path
+from ultralytics import YOLO
+from PIL import Image, ImageDraw, ImageFont
+import numpy as np
+
+def draw_boxes_pil(result, out_path):
+    """
+    Gambar bounding boxes dari 'result' (Ultralytics) ke gambar,
+    lalu simpan ke 'out_path' tanpa menggunakan OpenCV.
+    """
+    # result.orig_img = numpy array BGR; ubah ke RGB tanpa cv2
+    arr_bgr = result.orig_img
+    arr_rgb = arr_bgr[..., ::-1]  # BGR -> RGB
+    img = Image.fromarray(arr_rgb)
+    draw = ImageDraw.Draw(img)
+
+    # Ambil prediksi
+    boxes = result.boxes
+    if boxes is not None and len(boxes) > 0:
+        xyxy = boxes.xyxy.cpu().numpy()        # (N, 4)
+        conf = boxes.conf.cpu().numpy()        # (N,)
+        cls  = boxes.cls.cpu().numpy().astype(int)  # (N,)
+
+        # Font opsional (safe default)
+        try:
+            font = ImageFont.load_default()
+        except Exception:
+            font = None
+
+        for (x1, y1, x2, y2), c, k in zip(xyxy, conf, cls):
+            label = f"{result.names[int(k)]} {c:.2f}" if hasattr(result, "names") else f"id{k} {c:.2f}"
+            # kotak
+            draw.rectangle([x1, y1, x2, y2], outline=(0, 255, 0), width=3)
+            # latar label sederhana
+            tw, th = draw.textlength(label, font=font), 12 if font is None else font.size + 4
+            draw.rectangle([x1, max(0, y1 - th), x1 + tw + 6, y1], fill=(0, 255, 0))
+            draw.text((x1 + 3, y1 - th + 2), label, fill=(0, 0, 0), font=font)
+
+    # Simpan
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    img.save(out_path)
+    print(f"[INFO] Hasil disimpan di {out_path}")
 
 def run(model_path, source, show=True, save=True, save_dir="runs/streamlit"):
+    """
+    show: diabaikan (tidak ada GUI di cloud), disediakan agar kompatibel.
+    """
+    # Tolak webcam di cloud
+    if str(source).isdigit():
+        print("[WARN] Mode webcam tidak didukung di lingkungan cloud.")
+        return
+
+    # Load model
     model = YOLO(model_path)
 
+    # Jalankan inferensi pada file gambar / video
+    # (Untuk video, Ultralytics akan mengeluarkan banyak 'result')
+    results = model(source)
+
     save_dir = Path(save_dir)
-    if save:
-        save_dir.mkdir(parents=True, exist_ok=True)
-
-    # Webcam (source = "0", "1", dst)
-    if source.isdigit():
-        cap = cv2.VideoCapture(int(source))
-        if not cap.isOpened():
-            print("Gagal membuka webcam!")
-            return
-
-        frame_count = 0
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-
-            results = model(frame)
-            for r in results:
-                im_bgr = r.plot()
-
-                if show:
-                    cv2.imshow("YOLO Webcam Detection", im_bgr)
-
-                if save:
-                    out_path = save_dir / f"webcam_frame_{frame_count}.jpg"
-                    cv2.imwrite(str(out_path), im_bgr)
-                    print(f"[INFO] Hasil disimpan di {out_path}")
-                    frame_count += 1
-
-            if show and cv2.waitKey(1) & 0xFF == ord('q'):
-                break
-
-        cap.release()
-        cv2.destroyAllWindows()
-
-    # File (gambar/video)
-    else:
-        results = model(source)
-        for i, r in enumerate(results):
-            im_bgr = r.plot()
-
-            if show:
-                cv2.imshow("YOLO Detection", im_bgr)
-                cv2.waitKey(0)
-
-            if save:
-                out_path = save_dir / f"result_{i}.jpg"
-                cv2.imwrite(str(out_path), im_bgr)
-                print(f"[INFO] Hasil disimpan di {out_path}")
-
-        cv2.destroyAllWindows()
-
+    idx = 0
+    for r in results:
+        out_path = save_dir / f"result_{idx}.jpg"
+        if save:
+            draw_boxes_pil(r, out_path)
+        idx += 1
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, required=True, help="Path ke model YOLO (.pt / .onnx)")
-    parser.add_argument("--source", type=str, required=True, help="Path ke gambar/video atau index webcam (contoh: 0)")
-    parser.add_argument("--noshow", action="store_true", help="Jangan tampilkan window hasil (wajib di cloud)")
+    parser.add_argument("--source", type=str, required=True, help="Path ke gambar/video (bukan index webcam)")
+    parser.add_argument("--noshow", action="store_true", help="(Diabaikan) Jangan tampilkan window hasil")
     parser.add_argument("--nosave", action="store_true", help="Jangan simpan hasil")
     parser.add_argument("--save_dir", type=str, default="runs/streamlit", help="Folder untuk menyimpan hasil")
-    # argumen fallback untuk kompatibilitas perintah dari app.py (akan diabaikan jika tidak dipakai)
+    # argumen kompatibilitas dari app.py (tidak dipakai tapi tidak bikin error)
     parser.add_argument("--project", type=str, default=None)
     parser.add_argument("--name", type=str, default=None)
     parser.add_argument("--exist-ok", action="store_true")
-
     args = parser.parse_args()
 
     run(
